@@ -2,13 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="3e45a805-5022-455a-a2f5-43ea08756f73" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/.name" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/Musicbot 2.0.iml" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/libraries/GOPATH__untitled_.xml" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/libraries/Go_SDK.xml" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/modules.xml" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/workspace.xml" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/../Musicbot 2.0/Test.go" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/../Musicbot 2.0/.idea/workspace.xml" afterPath="$PROJECT_DIR$/../Musicbot 2.0/.idea/workspace.xml" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
