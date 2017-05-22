@@ -47,9 +47,9 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 type server struct {
 	playlist []string
-	id       string
+	idd      string
 }
 
 func (s *server) play() {
-
+	//
 }
