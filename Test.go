@@ -27,7 +27,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, m.Content)
 	}
 	if m.Author.Bot {
-		s.ChannelMessageSend(m.ChannelID, m.Author.Mention()+" ur gay")
+		s.ChannelMessageSend(m.ChannelID, m.Author.Mention()+" ur geay")
 	}
 	if strings.HasPrefix(m.Content, "!botsay") {
 		s.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
