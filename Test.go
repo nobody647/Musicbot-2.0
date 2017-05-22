@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+var plm map[string][]string
 
 func main() {
 	discord, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
@@ -17,6 +18,7 @@ func main() {
 	discord.ChannelMessageSend("104979971667197952", "hey there")
 	discord.AddHandler(messageCreate)
 	//server1 := new(server)
+	plm = make(map[string][]string)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
@@ -41,15 +43,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if strings.HasPrefix(m.Content, "!sr") {
 		dgv, _ := s.ChannelVoiceJoin("104979971667197952", "156887965392437250", false, false)
 		dgvoice.PlayAudioFile(dgv, "test.mp3")
+		c, _ := s.State.Channel(m.ChannelID)
+
+		plm[c.GuildID] = append(plm[c.GuildID], "wZZ7oFKsKzY") //Adds item to playlist
+
 	}
 
 }
 
-type server struct {
-	playlist []string
-	idd      string
-}
-
-func (s *server) play() {
-	//
-}
+func play(c discordgo.Channel, )
