@@ -3,6 +3,7 @@ package main
 //import "fmt"
 import (
 	"github.com/bwmarrin/discordgo"
+	"github.com/bwmarrin/dgvoice"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,7 +35,13 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
 
-	if strings.HasPrefix(m.Content, "!") {
-		return
+	if strings.HasPrefix(m.Content, "!sr") {
+		dgv, _ := s.ChannelVoiceJoin("104979971667197952", "156887965392437250", false, false)
+		dgvoice.PlayAudioFile(dgv, "test.mp3")
 	}
+
+}
+
+type Server struct {
+	//playlist:= []
 }
