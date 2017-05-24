@@ -18,7 +18,7 @@ var plm map[string]*server
 func main() {
 	discord, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
 	discord.Open()
-	discord.ChannelMessageSend("104979971667197952", "*hello there*")
+	//discord.ChannelMessageSend("104979971667197952", "*hello there*")
 
 	discord.AddHandler(messageCreate)
 
@@ -108,7 +108,6 @@ func (se *server)playFile() {
 
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
 	g, _ := s.State.Guild(c.GuildID)
-
 	dgv, _ := s.ChannelVoiceJoin(g.ID, g.VoiceStates[0].ChannelID, false,false)
 	se.dgv = dgv
 	go se.playLoop(s)
@@ -119,20 +118,39 @@ func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
 type server struct{
 	dgv *discordgo.VoiceConnection
 	pl  []string
+	playing bool
 
 }
 
 func download(s string){
-	cmd, _ := exec.Command("youtube-dl", " --extract-audio --audio-format mp3  --output \"%(id)s.%(ext)s\" "+s).Output()
+	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", ""+s+".mp3" ,s)
 
-	fmt.Println(cmd)
+	// Combine stdout and stderr
+	printCommand(cmd)
+	output, err := cmd.CombinedOutput()
+	printError(err)
+	printOutput(output) // => go version go1.3 darwin/amd64
+
 
 }
 
 func songExists(s string) bool{
-	if _, err := os.Stat(s); os.IsNotExist(err) { //Download
+	if _, err := os.Stat(s+".mp3"); os.IsNotExist(err) { //Download
 		return false
 	}else{
 		return true
+	}
+}
+func printCommand(cmd *exec.Cmd) {
+	fmt.Printf("==> Executing: %s\n", strings.Join(cmd.Args, " "))
+}
+func printError(err error) {
+	if err != nil {
+		os.Stderr.WriteString(fmt.Sprintf("==> Error: %s\n", err.Error()))
+	}
+}
+func printOutput(outs []byte) {
+	if len(outs) > 0 {
+		fmt.Printf("==> Output: %s\n", string(outs))
 	}
 }
