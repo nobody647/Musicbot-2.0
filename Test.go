@@ -45,9 +45,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if strings.HasPrefix(m.Content, "!sr") {
 		defer func() {
-			if r := recover(); r != nil {
-				s.ChannelMessageSend(m.ID, "Hmm, we couldn't find a youtube video with that link")
-			}
+			s.ChannelMessageSend(m.ID, "Hmm, we couldn't find a youtube video with that link")
+			recover()
 		}()
 		request := parseLink(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
 
@@ -73,12 +72,30 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || strings.HasPrefix(m.Content, "!pl") {
+		defer func(){
+			recover()
+		}()
 		c, _ := s.State.Channel(m.ChannelID)
+		se := plm[c.GuildID] //Saves server locally
+
+		if se == nil { //Initializes server
+			se = new(server)
+			se.pl = make([]string, 0)
+			se.connect(s, c)
+		}
 
 		s.ChannelMessageSend(m.ChannelID, "There are "+strconv.Itoa(len(plm[c.GuildID].pl)))
 	}
 
 	if strings.HasPrefix(m.Content, "!skip") {
+		c, _ := s.State.Channel(m.ChannelID)
+		se := plm[c.GuildID] //Saves server locally
+
+		if se == nil { //Initializes server
+			se = new(server)
+			se.pl = make([]string, 0)
+			se.connect(s, c)
+		}
 
 		if m.Content == "!skip" {
 			dgvoice.KillPlayer()
@@ -89,9 +106,6 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				return
 			}
 			if i < 0 {
-				c, _ := s.State.Channel(m.ChannelID)
-				se := plm[c.GuildID] //Saves server locally
-
 				se.pl = append(se.pl[:i], se.pl[i+1:]...)
 			} else if i == 0 {
 				m.Content = "!skip"
