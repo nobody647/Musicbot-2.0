@@ -50,7 +50,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "!sr") {
-		request := strings.TrimSpace(strings.TrimPrefix(m.Content,"!sr")) //Requested song/link
+		defer func() {
+			if r := recover(); r != nil{
+				s.ChannelMessageSend(m.ID, "Hmm, we couldn't find a youtube video with that link")
+			}
+		}()
+		request := parseLink(strings.TrimSpace(strings.TrimPrefix(m.Content,"!sr"))) //Requested song/link
 
 		c, _ := s.State.Channel(m.ChannelID)
 		se := plm[c.GuildID] //Saves server locally
@@ -75,6 +80,27 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		c, _ := s.State.Channel(m.ChannelID)
 
 		s.ChannelMessageSend(m.ChannelID, strconv.Itoa(len(plm[c.GuildID].pl)))
+	}
+	if strings.HasPrefix(m.Content, "!skip"){
+
+		if m.Content == "!skip"{
+			dgvoice.KillPlayer()
+		}else{
+			a := strings.TrimSpace(strings.TrimPrefix(m.Content, "!skip"))
+			i, err := strconv.Atoi(a)
+			if err != nil {
+				return
+			}
+			if i < 0{
+				c, _ := s.State.Channel(m.ChannelID)
+				se := plm[c.GuildID] //Saves server locally
+
+				se.pl = append(se.pl[:i], se.pl[i+1:]...)
+			}else if i == 0{
+				m.Content = "!skip"
+				messageCreate(s, m)
+			}
+		}
 	}
 }
 
@@ -103,7 +129,11 @@ func (se *server) playLoop(s *discordgo.Session) {
 }
 
 func (se *server)playFile() {
+	se.playing = true
+	fmt.Println("Playing")
 	dgvoice.PlayAudioFile(se.dgv, se.pl[0]+".mp3")
+	se.playing = false
+	fmt.Println("Stopped playing")
 }
 
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
@@ -153,4 +183,26 @@ func printOutput(outs []byte) {
 	if len(outs) > 0 {
 		fmt.Printf("==> Output: %s\n", string(outs))
 	}
+}
+
+func parseLink(s string) string{
+
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	s = strings.TrimPrefix(s, "www.")
+
+
+	if len(s) == 11{
+		return s
+	}else if strings.Contains(s, "youtube.com"){
+		s = strings.TrimPrefix(s, "youtube.com/watch?v=")
+		s = strings.Split(s,"&")[0]
+	}else if strings.Contains(s, "youtu.be"){
+		s = strings.TrimPrefix(s, "youtu.be/")
+		s = strings.Split(s, "?")[0]
+	}else{
+		panic("No video found")
+	}
+	return s
+
 }
