@@ -11,19 +11,33 @@ import (
 	"strconv"
 	"os/exec"
 	"fmt"
+	"google.golang.org/api/youtube/v3"
+	"net/http"
+	"log"
+	"google.golang.org/api/googleapi/transport"
 )
 
 var plm map[string]*server
+var yt *youtube.Service
 
 func main() {
 	discord, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
 	discord.Open()
-	//discord.ChannelMessageSend("104979971667197952", "*hello there*")
-
 	discord.AddHandler(messageCreate)
 
 	plm = make(map[string]*server)
 
+
+	client := &http.Client{
+		Transport: &transport.APIKey{Key: "AIzaSyBTYNvJ80kHSE8AypP7Yst5Fshc8ZibHRA"},
+	}
+
+	yti, err := youtube.New(client)
+	yt = yti
+
+	if err != nil {
+		log.Fatalf("Error creating new YouTube client: %v", err)
+	}
 	sc := make(chan os.Signal, 1)
 	//noinspection ALL
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
@@ -45,11 +59,17 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if strings.HasPrefix(m.Content, "!sr") {
 		defer func() {
-			s.ChannelMessageSend(m.ID, "Hmm, we couldn't find a youtube video with that link")
-			recover()
+			if r := recover(); r != nil {
+				s.ChannelMessageSend(m.ID, "Hmm, we couldn't find a youtube video with that link")
+			}
 		}()
-		request := parseLink(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
-
+		request := getSearch(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
+		if request == "" {
+			panic("Can't find video")
+		}else if request == "live"{
+			s.ChannelMessageSend(m.ChannelID, "That's a livestream you moron")
+			return
+		}
 		c, _ := s.State.Channel(m.ChannelID)
 		se := plm[c.GuildID] //Saves server locally
 
@@ -83,8 +103,18 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			se.pl = make([]string, 0)
 			se.connect(s, c)
 		}
+		st := "There are "+strconv.Itoa(len(plm[c.GuildID].pl))+" songs in the playlist\n"
+		for i := range se.pl{
+			st += "\n["+strconv.Itoa(i)+"] "+se.pl[i]
+		}
+		sent, _ :=s.ChannelMessageSend(m.ChannelID, st)
 
-		s.ChannelMessageSend(m.ChannelID, "There are "+strconv.Itoa(len(plm[c.GuildID].pl)))
+		delete := func(){
+			time.Sleep(time.Second* 5)
+			s.ChannelMessageDelete(m.ChannelID, m.ID)
+			s.ChannelMessageDelete(m.ChannelID, sent.ID)
+		}
+		go delete()
 	}
 
 	if strings.HasPrefix(m.Content, "!skip") {
@@ -105,13 +135,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			if err != nil {
 				return
 			}
-			if i < 0 {
+			if i > 0 {
 				se.pl = append(se.pl[:i], se.pl[i+1:]...)
 			} else if i == 0 {
 				m.Content = "!skip"
 				messageCreate(s, m)
 			}
 		}
+		s.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
 }
 
@@ -198,5 +229,29 @@ func parseLink(s string) string {
 		panic("No video found")
 	}
 	return s
+
+}
+
+func getSearch(s string) string{
+	defer func(){
+		recover()
+	}()
+
+	call := yt.Search.List("snippet")
+	call = call.MaxResults(1)
+	call = call.Q(s)
+
+	response, err := call.Do()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(response.Items) == 0{
+		panic("No results")
+	}
+	if response.Items[0].Snippet.LiveBroadcastContent == "live"{
+		return "live"
+	}
+	return response.Items[0].Id.VideoId
 
 }
