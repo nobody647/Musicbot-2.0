@@ -15,13 +15,16 @@ import (
 	"net/http"
 	"log"
 	"google.golang.org/api/googleapi/transport"
+	"errors"
 )
 
 var plm map[string]*server
 var yt *youtube.Service
+var discord discordgo.Session
 
 func main() {
-	discord, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
+	discord2, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
+	discord = *discord2
 	discord.Open()
 	discord.AddHandler(messageCreate)
 
@@ -60,14 +63,22 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if strings.HasPrefix(m.Content, "!sr") {
 		defer func() {
 			if r := recover(); r != nil {
-				s.ChannelMessageSend(m.ID, "Hmm, we couldn't find a youtube video with that link")
+				s.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
 			}
 		}()
-		request := getSearch(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
-		if request == "" {
-			panic("Can't find video")
-		}else if request == "live"{
-			s.ChannelMessageSend(m.ChannelID, "That's a livestream you moron")
+
+		request, err := getSearch(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
+
+		if err != nil {
+			sent, _ := s.ChannelMessageSend(m.ChannelID, err.Error())
+
+			delete := func(){
+				time.Sleep(time.Second* 5)
+				s.ChannelMessageDelete(m.ChannelID, m.ID)
+				s.ChannelMessageDelete(m.ChannelID, sent.ID)
+			}
+
+			go delete()
 			return
 		}
 		c, _ := s.State.Channel(m.ChannelID)
@@ -75,12 +86,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		if se == nil { //Initializes server
 			se = new(server)
-			se.pl = make([]string, 0)
+			se.pl = make([]youtube.Video, 0)
 			se.connect(s, c)
 		}
 
-		if !songExists(request) { //Download
-			go download(request)
+		if !songExists(request.Id) { //Download
+			go download(request.Id)
 		}
 
 		se.pl = append(se.pl, request) //Adds item to playlist
@@ -100,14 +111,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		if se == nil { //Initializes server
 			se = new(server)
-			se.pl = make([]string, 0)
+			se.pl = make([]youtube.Video, 0)
 			se.connect(s, c)
 		}
 		st := "There are "+strconv.Itoa(len(plm[c.GuildID].pl))+" songs in the playlist\n"
 		for i := range se.pl{
-			st += "\n["+strconv.Itoa(i)+"] "+se.pl[i]
+			st += "\n["+strconv.Itoa(i)+"] "+se.pl[i].Snippet.Title
 		}
-		sent, _ :=s.ChannelMessageSend(m.ChannelID, st)
+		sent, _ := s.ChannelMessageSend(m.ChannelID, st)
 
 		delete := func(){
 			time.Sleep(time.Second* 5)
@@ -123,7 +134,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		if se == nil { //Initializes server
 			se = new(server)
-			se.pl = make([]string, 0)
+			se.pl = make([]youtube.Video, 0)
 			se.connect(s, c)
 		}
 
@@ -148,7 +159,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 type server struct {
 	dgv     *discordgo.VoiceConnection
-	pl      []string
+	pl      []youtube.Video
 	playing bool
 }
 
@@ -167,12 +178,12 @@ func (se *server) playLoop(s *discordgo.Session) {
 			time.Sleep(time.Second * 1)
 		}
 
-		for !songExists(se.pl[0]) {
+		for !songExists(se.pl[0].Id) {
 			time.Sleep(time.Second * 1)
 		}
 
-		se.playFile()
-		npl := make([]string, len(se.pl)-1)
+		se.playFile(se.pl[0])
+		npl := make([]youtube.Video, len(se.pl)-1)
 		for i := range se.pl {
 			if i == 0 {
 				continue
@@ -184,10 +195,12 @@ func (se *server) playLoop(s *discordgo.Session) {
 	}
 }
 
-func (se *server) playFile() {
+func (se *server) playFile(v youtube.Video) {
 	se.playing = true
 	fmt.Println("Playing")
-	dgvoice.PlayAudioFile(se.dgv, se.pl[0]+".mp3")
+	discord.UpdateStatus(0, v.Snippet.Title)
+	dgvoice.PlayAudioFile(se.dgv, v.Id+".mp3")
+	discord.UpdateStatus(0, "")
 	se.playing = false
 	fmt.Println("Stopped playing")
 }
@@ -232,7 +245,7 @@ func parseLink(s string) string {
 
 }
 
-func getSearch(s string) string{
+func getSearch(s string) (youtube.Video, error){
 	defer func(){
 		recover()
 	}()
@@ -240,18 +253,27 @@ func getSearch(s string) string{
 	call := yt.Search.List("snippet")
 	call = call.MaxResults(1)
 	call = call.Q(s)
+	call = call.Type("video")
 
 	response, err := call.Do()
 
+	var ne error
 	if err != nil {
-		log.Fatal(err)
+		return *new(youtube.Video), ne
 	}
 	if len(response.Items) == 0{
-		panic("No results")
+		return *new(youtube.Video), errors.New("Sorry, we couldn't find any results for *"+s+"*")
 	}
 	if response.Items[0].Snippet.LiveBroadcastContent == "live"{
-		return "live"
+		return *new(youtube.Video), errors.New("Sorry, live broadcasts are not supported at the moment")
+
 	}
-	return response.Items[0].Id.VideoId
+	res := yt.Videos.List("snippet, id, contentDetails")
+	res.Id(response.Items[0].Id.VideoId)
+	ress, err := res.Do()
+	if err != nil {
+		return *new(youtube.Video), err
+	}
+	return *ress.Items[0], nil
 
 }
