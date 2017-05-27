@@ -153,7 +153,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
 
-	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) {
+	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) || strings.Contains(strings.ToLower(m.Content), "yikes! something went wrong!") {
 		//noinspection ALL
 		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
 		bugQuotes := []string{
@@ -166,6 +166,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"I'm not BROKEN. I'm just 🌼*special*🌼",
 			"At least I'm not a virgin who spends all their time on the internet laughing at shitty memes",
 			strings.Replace(strings.Replace(strings.ToLower(m.Content), "musicbot", m.Author.Mention(), -1), "music bot", m.Author.Mention(), -1),
+			"Yikes! something went wrong!",
 		}
 		rn := rand.Intn(len(bugQuotes))
 		s.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
