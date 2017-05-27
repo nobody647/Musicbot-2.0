@@ -26,6 +26,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"math/rand"
 )
 
 var plm map[string]*server
@@ -80,6 +81,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		if err != nil {
 			sendAndDelete(m.ChannelID, m.ID, err.Error())
+			return
 		}
 
 		c, _ := s.State.Channel(m.ChannelID)
@@ -150,6 +152,24 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		s.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
+
+	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) {
+		//noinspection ALL
+		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
+		bugQuotes := []string{
+			"Musicbot is 100% properly working and fixed and there are no bugs ever™",
+			"Fuck you",
+			"At least I'm not as stupid as you",
+			"What the fuck did you just fucking say about me, you little bitch?",
+			"@here " + m.Author.Mention() + " has aids",
+			"Please submit all bug reports by SHOVING THEM UP YOUR ASS",
+			"I'm not BROKEN. I'm just 🌼*special*🌼",
+			"At least I'm not a virgin who spends all their time on the internet laughing at shitty memes",
+			strings.Replace(strings.Replace(strings.ToLower(m.Content), "musicbot", m.Author.Mention(), -1), "music bot", m.Author.Mention(), -1),
+		}
+		rn := rand.Intn(len(bugQuotes))
+		s.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
+	}
 }
 
 type server struct {
@@ -157,7 +177,6 @@ type server struct {
 	pl      []youtube.Video
 	playing bool
 }
-
 
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
 	g, _ := s.State.Guild(c.GuildID)
