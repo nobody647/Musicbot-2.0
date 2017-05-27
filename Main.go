@@ -1,21 +1,31 @@
+/*
+    __  ___   __  __   _____    ____   ______    ____    ____   ______          ___       ____
+   /  |/  /  / / / /  / ___/   /  _/  / ____/   / __ )  / __ \ /_  __/         |__ \     / __ \
+  / /|_/ /  / / / /   \__ \    / /   / /       / __  | / / / /  / /            __/ /    / / / /
+ / /  / /  / /_/ /   ___/ /  _/ /   / /___    / /_/ / / /_/ /  / /            / __/  _ / /_/ /
+/_/  /_/   \____/   /____/  /___/   \____/   /_____/  \____/  /_/            /____/ (_)\____/
+
+	A project by Ian Flanagan
+*/
+
 package main
 
 import (
-	"github.com/bwmarrin/discordgo"
+	"errors"
+	"fmt"
 	"github.com/bwmarrin/dgvoice"
+	"github.com/bwmarrin/discordgo"
+	"google.golang.org/api/googleapi/transport"
+	"google.golang.org/api/youtube/v3"
+	"log"
+	"net/http"
 	"os"
-	"strings"
+	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
-	"strconv"
-	"os/exec"
-	"fmt"
-	"google.golang.org/api/youtube/v3"
-	"net/http"
-	"log"
-	"google.golang.org/api/googleapi/transport"
-	"errors"
 )
 
 var plm map[string]*server
@@ -29,7 +39,6 @@ func main() {
 	discord.AddHandler(messageCreate)
 
 	plm = make(map[string]*server)
-
 
 	client := &http.Client{
 		Transport: &transport.APIKey{Key: "AIzaSyBTYNvJ80kHSE8AypP7Yst5Fshc8ZibHRA"},
@@ -70,21 +79,13 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		request, err := getSearch(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
 
 		if err != nil {
-			sent, _ := s.ChannelMessageSend(m.ChannelID, err.Error())
-
-			delete := func(){
-				time.Sleep(time.Second* 5)
-				s.ChannelMessageDelete(m.ChannelID, m.ID)
-				s.ChannelMessageDelete(m.ChannelID, sent.ID)
-			}
-
-			go delete()
-			return
+			sendAndDelete(m.ChannelID, m.ID, err.Error())
 		}
+
 		c, _ := s.State.Channel(m.ChannelID)
 		se := plm[c.GuildID] //Saves server locally
 
-		if se == nil { //Initializes server
+		if se == nil {
 			se = new(server)
 			se.pl = make([]youtube.Video, 0)
 			se.connect(s, c)
@@ -103,7 +104,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || strings.HasPrefix(m.Content, "!pl") {
-		defer func(){
+		defer func() {
 			recover()
 		}()
 		c, _ := s.State.Channel(m.ChannelID)
@@ -114,18 +115,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			se.pl = make([]youtube.Video, 0)
 			se.connect(s, c)
 		}
-		st := "There are "+strconv.Itoa(len(plm[c.GuildID].pl))+" songs in the playlist\n"
-		for i := range se.pl{
-			st += "\n["+strconv.Itoa(i)+"] "+se.pl[i].Snippet.Title
+		st := "There are " + strconv.Itoa(len(plm[c.GuildID].pl)) + " songs in the playlist\n"
+		for i := range se.pl {
+			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
 		}
-		sent, _ := s.ChannelMessageSend(m.ChannelID, st)
 
-		delete := func(){
-			time.Sleep(time.Second* 5)
-			s.ChannelMessageDelete(m.ChannelID, m.ID)
-			s.ChannelMessageDelete(m.ChannelID, sent.ID)
-		}
-		go delete()
+		sendAndDelete(m.ChannelID, m.ID, st)
 	}
 
 	if strings.HasPrefix(m.Content, "!skip") {
@@ -163,6 +158,7 @@ type server struct {
 	playing bool
 }
 
+
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
 	g, _ := s.State.Guild(c.GuildID)
 	dgv, _ := s.ChannelVoiceJoin(g.ID, g.VoiceStates[0].ChannelID, false, false)
@@ -199,39 +195,41 @@ func (se *server) playFile(v youtube.Video) {
 	se.playing = true
 	fmt.Println("Playing")
 	discord.UpdateStatus(0, v.Snippet.Title)
-	dgvoice.PlayAudioFile(se.dgv, v.Id+".mp3")
+	dgvoice.PlayAudioFile(se.dgv, "dl/"+v.Id+".mp3")
 	discord.UpdateStatus(0, "")
 	se.playing = false
 	fmt.Println("Stopped playing")
 }
 
 func download(s string) {
-	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", s+".mp3", s)
+	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", s)
 
-	// Combine stdout and stderr
 	fmt.Println(cmd)
+	//noinspection ALL
 	output, err := cmd.CombinedOutput()
-	fmt.Println(err)
-	fmt.Println(output) // => go version go1.3 darwin/amd64
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(output)
 
 }
 
 func songExists(s string) bool {
-	if _, err := os.Stat(s + ".mp3"); os.IsNotExist(err) { //Download
+	if _, err := os.Stat("dl/" + s + ".mp3"); os.IsNotExist(err) { //Download
 		return false
 	} else {
 		return true
 	}
 }
 
-func parseLink(s string) string {
+func parseLink(s string) (string, error) {
 
 	s = strings.TrimPrefix(s, "https://")
 	s = strings.TrimPrefix(s, "http://")
 	s = strings.TrimPrefix(s, "www.")
 
 	if len(s) == 11 {
-		return s
+		return s, nil
 	} else if strings.Contains(s, "youtube.com") {
 		s = strings.TrimPrefix(s, "youtube.com/watch?v=")
 		s = strings.Split(s, "&")[0]
@@ -239,17 +237,27 @@ func parseLink(s string) string {
 		s = strings.TrimPrefix(s, "youtu.be/")
 		s = strings.Split(s, "?")[0]
 	} else {
-		panic("No video found")
+		return s, errors.New("No video found")
 	}
-	return s
+	return s, nil
 
 }
 
-func getSearch(s string) (youtube.Video, error){
-	defer func(){
+func getSearch(s string) (youtube.Video, error) {
+	defer func() {
 		recover()
 	}()
 
+	l, _ := parseLink(s)
+	if l != s {
+		res := yt.Videos.List("snippet, id, contentDetails")
+		res.Id(s)
+		ress, err := res.Do()
+		if err != nil {
+			return *new(youtube.Video), err
+		}
+		return *ress.Items[0], nil
+	}
 	call := yt.Search.List("snippet")
 	call = call.MaxResults(1)
 	call = call.Q(s)
@@ -261,10 +269,10 @@ func getSearch(s string) (youtube.Video, error){
 	if err != nil {
 		return *new(youtube.Video), ne
 	}
-	if len(response.Items) == 0{
-		return *new(youtube.Video), errors.New("Sorry, we couldn't find any results for *"+s+"*")
+	if len(response.Items) == 0 {
+		return *new(youtube.Video), errors.New("Sorry, we couldn't find any results for *" + s + "*")
 	}
-	if response.Items[0].Snippet.LiveBroadcastContent == "live"{
+	if response.Items[0].Snippet.LiveBroadcastContent == "live" {
 		return *new(youtube.Video), errors.New("Sorry, live broadcasts are not supported at the moment")
 
 	}
@@ -275,5 +283,21 @@ func getSearch(s string) (youtube.Video, error){
 		return *new(youtube.Video), err
 	}
 	return *ress.Items[0], nil
+
+}
+
+func sendAndDelete(c string, m string, s ...string) {
+	var iid = make([]string, len(s)+1)
+	iid[0] = m
+	for i := range s {
+		id, _ := discord.ChannelMessageSend(c, s[i])
+		iid[i+1] = id.ID
+	}
+
+	time.Sleep(time.Second * 5)
+
+	for i := range iid {
+		discord.ChannelMessageDelete(c, iid[i])
+	}
 
 }
