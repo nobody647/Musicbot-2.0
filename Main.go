@@ -18,6 +18,7 @@ import (
 	"google.golang.org/api/googleapi/transport"
 	"google.golang.org/api/youtube/v3"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,7 +27,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"math/rand"
 )
 
 var plm map[string]*server
