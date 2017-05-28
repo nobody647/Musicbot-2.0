@@ -14,9 +14,13 @@ import (
 	"errors"
 	"fmt"
 	//"github.com/bwmarrin/dgvoice"
+	"bufio"
+	"encoding/binary"
 	"github.com/bwmarrin/discordgo"
 	"google.golang.org/api/googleapi/transport"
 	"google.golang.org/api/youtube/v3"
+	"io"
+	"layeh.com/gopus"
 	"log"
 	"math/rand"
 	"net/http"
@@ -25,13 +29,9 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
-	"layeh.com/gopus"
-	"bufio"
-	"encoding/binary"
-	"io"
-	"sync"
 )
 
 var plm map[string]*server
@@ -218,7 +218,7 @@ type server struct {
 	mu          sync.Mutex
 	skip        bool
 	pause       bool
-	pl      []youtube.Video
+	pl          []youtube.Video
 }
 
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
@@ -306,6 +306,7 @@ func (se *server) SendPCM(pcm <-chan []int16) {
 }
 
 func (se *server) PlayAudioFile(filename string) {
+	fmt.Printf("Starting to play %s\n", filename)
 	// Create a shell command "object" to run.
 	se.run = exec.Command("ffmpeg", "-i", filename, "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
 	//noinspection ALL
@@ -339,6 +340,7 @@ func (se *server) PlayAudioFile(filename string) {
 
 	for {
 		if se.skip {
+			fmt.Printf("We (%s) just got skipped!\n!", filename)
 			return
 		}
 		for se.pause {
@@ -359,19 +361,20 @@ func (se *server) PlayAudioFile(filename string) {
 		// Send received PCM to the sendPCM channel
 		se.send <- audiobuf
 	}
+	fmt.Printf("%s is outta here!\n", filename)
 }
 
-func download(s string) {
+func download(s string) { //TODO: Stream using -g flag in yt-dl
 	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", s)
 
-	fmt.Println(cmd)
+	fmt.Printf("Beginning download with command :%s\n", cmd)
 	//noinspection ALL
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("Error on download: %s\n", err)
 	}
-	fmt.Println(output)
-
+	fmt.Printf("Output : %s", output)
+	fmt.Println("Finished download")
 }
 
 func songExists(s string) bool {
@@ -468,5 +471,3 @@ const (
 	frameSize int = 960                 // uint16 size of each audio frame
 	maxBytes  int = (frameSize * 2) * 2 // max size of opus data
 )
-
-
