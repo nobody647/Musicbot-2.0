@@ -13,7 +13,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/bwmarrin/dgvoice"
+	//"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
 	"google.golang.org/api/googleapi/transport"
 	"google.golang.org/api/youtube/v3"
@@ -27,6 +27,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"layeh.com/gopus"
+	"bufio"
+	"encoding/binary"
+	"io"
+	"sync"
 )
 
 var plm map[string]*server
@@ -38,9 +43,7 @@ func main() {
 	discord = *discord2
 	discord.Open()
 	discord.AddHandler(messageCreate)
-
 	plm = make(map[string]*server)
-
 	client := &http.Client{
 		Transport: &transport.APIKey{Key: "AIzaSyBTYNvJ80kHSE8AypP7Yst5Fshc8ZibHRA"},
 	}
@@ -49,7 +52,7 @@ func main() {
 	yt = yti
 
 	if err != nil {
-		log.Fatalf("Error creating new YouTube client: %v", err)
+		log.Fatalf("Error creating new YouTube client: %se", err)
 	}
 	sc := make(chan os.Signal, 1)
 	//noinspection ALL
@@ -136,7 +139,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 
 		if m.Content == "!skip" {
-			dgvoice.KillPlayer()
+			se.skip = true
+			se.pause = false
 		} else {
 			a := strings.TrimSpace(strings.TrimPrefix(m.Content, "!skip"))
 			i, err := strconv.Atoi(a)
@@ -153,7 +157,36 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
 
+	if strings.HasPrefix(m.Content, "!pause") {
+		c, _ := s.State.Channel(m.ChannelID)
+		se := plm[c.GuildID] //Saves server locally
+
+		if se == nil { //Initializes server
+			se = new(server)
+			se.pl = make([]youtube.Video, 0)
+			se.connect(s, c)
+		}
+
+		se.pause = !se.pause
+		sendAndDelete(m.ChannelID, m.ID)
+	}
+
+	if strings.HasPrefix(m.Content, "!play") {
+		c, _ := s.State.Channel(m.ChannelID)
+		se := plm[c.GuildID] //Saves server locally
+
+		if se == nil { //Initializes server
+			se = new(server)
+			se.pl = make([]youtube.Video, 0)
+			se.connect(s, c)
+		}
+
+		se.pause = false
+		sendAndDelete(m.ChannelID, m.ID)
+	}
+
 	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) || strings.Contains(strings.ToLower(m.Content), "yikes! something went wrong!") {
+		return
 		//noinspection ALL
 		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
 		bugQuotes := []string{
@@ -174,15 +207,24 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 type server struct {
-	dgv     *discordgo.VoiceConnection
+	discordgo.VoiceConnection
+	speakers    map[uint32]*gopus.Decoder
+	opusEncoder *gopus.Encoder
+	run         *exec.Cmd
+	sendpcm     bool
+	recvpcm     bool
+	recv        chan *discordgo.Packet
+	send        chan []int16
+	mu          sync.Mutex
+	skip        bool
+	pause       bool
 	pl      []youtube.Video
-	playing bool
 }
 
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
 	g, _ := s.State.Guild(c.GuildID)
 	dgv, _ := s.ChannelVoiceJoin(g.ID, g.VoiceStates[0].ChannelID, false, false)
-	se.dgv = dgv
+	se.VoiceConnection = *dgv
 	go se.playLoop(s)
 	return
 
@@ -198,7 +240,9 @@ func (se *server) playLoop(s *discordgo.Session) {
 			time.Sleep(time.Second * 1)
 		}
 
-		se.playFile(se.pl[0])
+		se.pause = false
+		se.skip = false
+		se.PlayAudioFile("dl/" + se.pl[0].Id + ".mp3")
 		npl := make([]youtube.Video, len(se.pl)-1)
 		for i := range se.pl {
 			if i == 0 {
@@ -211,14 +255,110 @@ func (se *server) playLoop(s *discordgo.Session) {
 	}
 }
 
-func (se *server) playFile(v youtube.Video) {
-	se.playing = true
-	fmt.Println("Playing")
-	discord.UpdateStatus(0, v.Snippet.Title)
-	dgvoice.PlayAudioFile(se.dgv, "dl/"+v.Id+".mp3")
-	discord.UpdateStatus(0, "")
-	se.playing = false
-	fmt.Println("Stopped playing")
+func (se *server) SendPCM(pcm <-chan []int16) {
+
+	// make sure this only runs one instance at a time.
+	//noinspection ALL
+	se.mu.Lock()
+	if se.sendpcm || pcm == nil {
+		//noinspection ALL
+		se.mu.Unlock()
+		return
+	}
+	se.sendpcm = true
+	//noinspection ALL
+	se.mu.Unlock()
+
+	defer func() { se.sendpcm = false }()
+
+	var err error
+
+	se.opusEncoder, err = gopus.NewEncoder(frameRate, channels, gopus.Audio)
+
+	if err != nil {
+		fmt.Println("NewEncoder Error:", err)
+		return
+	}
+
+	for {
+
+		// read pcm from chan, exit if channel is closed.
+		recv, ok := <-pcm
+		if !ok {
+			fmt.Println("PCM Channel closed.")
+			return
+		}
+
+		// try encoding pcm frame with Opus
+		opus, err := se.opusEncoder.Encode(recv, frameSize, maxBytes)
+		if err != nil {
+			fmt.Println("Encoding Error:", err)
+			return
+		}
+
+		if se.Ready == false || se.OpusSend == nil {
+			fmt.Printf("Discordgo not ready for opus packets. %+se : %+se", se.Ready, se.OpusSend)
+			return
+		}
+		// send encoded opus data to the sendOpus channel
+		se.OpusSend <- opus
+	}
+}
+
+func (se *server) PlayAudioFile(filename string) {
+	// Create a shell command "object" to run.
+	se.run = exec.Command("ffmpeg", "-i", filename, "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
+	//noinspection ALL
+	ffmpegout, err := se.run.StdoutPipe()
+	if err != nil {
+		fmt.Println("StdoutPipe Error:", err)
+		return
+	}
+
+	ffmpegbuf := bufio.NewReaderSize(ffmpegout, 16384)
+
+	// Starts the ffmpeg command
+	//noinspection ALL
+	err = se.run.Start()
+	if err != nil {
+		fmt.Println("RunStart Error:", err)
+		return
+	}
+
+	// Send "speaking" packet over the voice websocket
+	se.Speaking(true)
+
+	// Send not "speaking" packet over the websocket when we finish
+	defer se.Speaking(false)
+
+	// will actually only spawn one instance, a bit hacky.
+	if se.send == nil {
+		se.send = make(chan []int16, 2)
+	}
+	go se.SendPCM(se.send)
+
+	for {
+		if se.skip {
+			return
+		}
+		for se.pause {
+			time.Sleep(time.Millisecond * 200)
+		}
+		// read data from ffmpeg stdout
+		audiobuf := make([]int16, frameSize*channels)
+		//noinspection ALL
+		err = binary.Read(ffmpegbuf, binary.LittleEndian, &audiobuf)
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return
+		}
+		if err != nil {
+			fmt.Println("error reading from ffmpeg stdout :", err)
+			return
+		}
+
+		// Send received PCM to the sendPCM channel
+		se.send <- audiobuf
+	}
 }
 
 func download(s string) {
@@ -271,7 +411,7 @@ func getSearch(s string) (youtube.Video, error) {
 	l, _ := parseLink(s)
 	if l != s {
 		res := yt.Videos.List("snippet, id, contentDetails")
-		res.Id(s)
+		res.Id(l)
 		ress, err := res.Do()
 		if err != nil {
 			return *new(youtube.Video), err
@@ -321,3 +461,12 @@ func sendAndDelete(c string, m string, s ...string) {
 	}
 
 }
+
+const (
+	channels  int = 2                   // 1 for mono, 2 for stereo
+	frameRate int = 48000               // audio sampling rate
+	frameSize int = 960                 // uint16 size of each audio frame
+	maxBytes  int = (frameSize * 2) * 2 // max size of opus data
+)
+
+
