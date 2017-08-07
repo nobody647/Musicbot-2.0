@@ -11,11 +11,10 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	//"github.com/bwmarrin/dgvoice"
 	"bufio"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -29,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	cowsay "github.com/Code-Hex/Neo-cowsay"
 	"github.com/bwmarrin/discordgo"
 	"google.golang.org/api/googleapi/transport"
 	"google.golang.org/api/youtube/v3"
@@ -39,7 +39,7 @@ var plm map[string]*server
 var yt *youtube.Service
 var discord discordgo.Session
 
-const cowsay string = ` ______________________________________
+const christianCowsay string = ` ______________________________________
 < no wearing this is a christian sever >
  --------------------------------------
         \   ^__^
@@ -98,13 +98,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 
 		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil {
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
+		se := getServer(s, c)
 
 		if !songExists(request.Id) { //Download
 			go download(request.Id)
@@ -123,13 +117,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			recover()
 		}()
 		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
+		se := getServer(s, c)
 
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
 		st := "There are " + strconv.Itoa(len(plm[c.GuildID].pl)) + " songs in the playlist\n"
 		for i := range se.pl {
 			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
@@ -139,14 +128,13 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "!skip") {
+		defer func() {
+			if r := recover(); r != nil {
+				s.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
+			}
+		}()
 		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
+		se := getServer(s, c)
 
 		if m.Content == "!skip" {
 			se.skip = true
@@ -169,13 +157,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if strings.HasPrefix(m.Content, "!pause") {
 		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
+		se := getServer(s, c)
 
 		se.pause = !se.pause
 		sendAndDelete(m.ChannelID, m.ID)
@@ -183,30 +165,39 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if strings.HasPrefix(m.Content, "!play") {
 		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
+		se := getServer(s, c)
 
 		se.pause = false
 		sendAndDelete(m.ChannelID, m.ID)
 	}
 
+	if strings.HasPrefix(m.Content, "!cowsay") {
+		say, _ := cowsay.Say(&cowsay.Cow{
+			Phrase:      strings.TrimPrefix(m.Content, "!cowsay"),
+			Type:        "default",
+			BallonWidth: 40,
+		})
+		s.ChannelMessageSend(m.ChannelID, "```"+say+"```")
+		discord.ChannelMessageDelete(m.ChannelID, m.ID)
+	}
+
+	// Noswear detection
 	file, _ := os.Open("swears.txt")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		if strings.Contains(strings.ToLower(m.Content), strings.Trim(scanner.Text(), "\" :1,")) {
 			fmt.Println("swar")
-			fmt.Print(cowsay)
-			discord.ChannelMessageSend(m.ChannelID, cowsay)
+			fmt.Print(christianCowsay)
+			//discord.ChannelMessageSend(m.ChannelID, christianCowsay)
+			c, _ := s.UserChannelCreate(m.Author.ID)
+			s.ChannelMessageSend(c.ID, christianCowsay)
+			break
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, "reading standard input:", err)
 	}
+
 	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) || strings.Contains(strings.ToLower(m.Content), "yikes! something went wrong!") {
 		//noinspection ALL
 		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
@@ -220,6 +211,17 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		rn := rand.Intn(len(bugQuotes))
 		s.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
 	}
+}
+
+func getServer(s *discordgo.Session, c *discordgo.Channel) *server {
+	se := plm[c.GuildID] //Saves server locally
+
+	if se == nil { //Initializes server
+		se = new(server)
+		se.pl = make([]youtube.Video, 0)
+		se.connect(s, c)
+	}
+	return se
 }
 
 type server struct {
