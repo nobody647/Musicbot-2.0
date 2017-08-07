@@ -16,11 +16,7 @@ import (
 	//"github.com/bwmarrin/dgvoice"
 	"bufio"
 	"encoding/binary"
-	"github.com/bwmarrin/discordgo"
-	"google.golang.org/api/googleapi/transport"
-	"google.golang.org/api/youtube/v3"
 	"io"
-	"layeh.com/gopus"
 	"log"
 	"math/rand"
 	"net/http"
@@ -32,11 +28,25 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
+	"google.golang.org/api/googleapi/transport"
+	"google.golang.org/api/youtube/v3"
+	"layeh.com/gopus"
 )
 
 var plm map[string]*server
 var yt *youtube.Service
 var discord discordgo.Session
+
+const cowsay string = ` ______________________________________
+< no wearing this is a christian sever >
+ --------------------------------------
+        \   ^__^
+         \  (oo)\_______
+            (__)\       )\/\
+                ||----w |
+                ||     ||`
 
 func main() {
 	discord2, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
@@ -185,19 +195,25 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		sendAndDelete(m.ChannelID, m.ID)
 	}
 
+	file, _ := os.Open("swears.txt")
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		if strings.Contains(strings.ToLower(m.Content), strings.Trim(scanner.Text(), "\" :1,")) {
+			fmt.Println("swar")
+			fmt.Print(cowsay)
+			discord.ChannelMessageSend(m.ChannelID, cowsay)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "reading standard input:", err)
+	}
 	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) || strings.Contains(strings.ToLower(m.Content), "yikes! something went wrong!") {
-		return
 		//noinspection ALL
 		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
 		bugQuotes := []string{
-			"Musicbot is 100% properly working and fixed and there are no bugs ever™",
-			"Fuck you",
-			"At least I'm not as stupid as you",
+			"Musicbot is 100% properly working and fixed and there are no bugs ever",
 			"What the fuck did you just fucking say about me, you little bitch?",
-			"@here " + m.Author.Mention() + " has aids",
-			"Please submit all bug reports by SHOVING THEM UP YOUR ASS",
-			"I'm not BROKEN. I'm just 🌼*special*🌼",
-			"At least I'm not a virgin who spends all their time on the internet laughing at shitty memes",
+			"I'm not BROKEN. I'm just *special*",
 			strings.Replace(strings.Replace(strings.ToLower(m.Content), "musicbot", m.Author.Mention(), -1), "music bot", m.Author.Mention(), -1),
 			"Yikes! something went wrong!",
 		}
