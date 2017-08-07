@@ -173,7 +173,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if strings.HasPrefix(m.Content, "!cowsay") {
 		say, _ := cowsay.Say(&cowsay.Cow{
-			Phrase:      strings.TrimPrefix(m.Content, "!cowsay"),
+			Phrase:      strings.TrimPrefix(m.Content, "!cowsay "),
 			Type:        "default",
 			BallonWidth: 40,
 		})
