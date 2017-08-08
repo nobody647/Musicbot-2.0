@@ -185,8 +185,9 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	file, _ := os.Open("swears.txt")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(m.Content), " "+strings.Trim(scanner.Text(), "\" :1,"+" ")) {
+		if strings.Contains(" "+strings.ToLower(m.Content)+" ", " "+strings.Trim(scanner.Text(), "\" :1,")+" ") {
 			fmt.Println("swar")
+			fmt.Println(scanner.Text())
 			fmt.Print(christianCowsay)
 			//discord.ChannelMessageSend(m.ChannelID, christianCowsay)
 			c, _ := s.UserChannelCreate(m.Author.ID)
