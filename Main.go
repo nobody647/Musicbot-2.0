@@ -27,7 +27,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	//
+
 	cowsay "github.com/Code-Hex/Neo-cowsay"
 	"github.com/bwmarrin/discordgo"
 	"google.golang.org/api/googleapi/transport"
@@ -185,7 +185,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	file, _ := os.Open("swears.txt")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(m.Content), strings.Trim(scanner.Text(), "\" :1,")) {
+		if strings.Contains(strings.ToLower(m.Content), " "+strings.Trim(scanner.Text(), "\" :1,"+" ")) {
 			fmt.Println("swar")
 			fmt.Print(christianCowsay)
 			//discord.ChannelMessageSend(m.ChannelID, christianCowsay)
