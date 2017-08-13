@@ -36,6 +36,7 @@ import (
 )
 
 var plm map[string]*server
+var pmlm map[string]string
 var yt *youtube.Service
 var discord discordgo.Session
 
@@ -54,6 +55,7 @@ func main() {
 	discord.Open()
 	discord.AddHandler(messageCreate)
 	plm = make(map[string]*server)
+	pmlm = make(map[string]string)
 	client := &http.Client{
 		Transport: &transport.APIKey{Key: "AIzaSyBTYNvJ80kHSE8AypP7Yst5Fshc8ZibHRA"},
 	}
@@ -77,6 +79,16 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
+	c, _ := s.State.Channel(m.ChannelID)
+	se, err := getServer(s, c)
+	if err != nil {
+		return
+	}
+
+	for i, sv := range plm {
+		guild, _ := s.State.Guild(sv.GuildID)
+		fmt.Println(i + " " + guild.Name)
+	}
 
 	if strings.HasPrefix(m.Content, "!botsay") {
 		s.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
@@ -87,6 +99,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		defer func() {
 			if r := recover(); r != nil {
 				s.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
+				fmt.Println(r)
 			}
 		}()
 
@@ -97,29 +110,22 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 
-		c, _ := s.State.Channel(m.ChannelID)
-		se := getServer(s, c)
-
 		if !songExists(request.Id) { //Download
 			go download(request.Id)
 		}
 
 		se.pl = append(se.pl, request) //Adds item to playlist
 
-		plm[getServer(s, c).GuildID] = se
-
 		s.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
 
 	}
 
-	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || strings.HasPrefix(m.Content, "!pl") {
+	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || m.Content == "!pl" {
 		defer func() {
 			recover()
 		}()
-		c, _ := s.State.Channel(m.ChannelID)
-		se := getServer(s, c)
 
-		st := "There are " + strconv.Itoa(len(plm[getServer(s, c).GuildID].pl)) + " songs in the playlist\n"
+		st := "There are " + strconv.Itoa(len(se.pl)) + " songs in the playlist\n"
 		for i := range se.pl {
 			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
 		}
@@ -133,8 +139,6 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				s.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
 			}
 		}()
-		c, _ := s.State.Channel(m.ChannelID)
-		se := getServer(s, c)
 
 		if m.Content == "!skip" {
 			se.skip = true
@@ -156,17 +160,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "!pause") {
-		c, _ := s.State.Channel(m.ChannelID)
-		se := getServer(s, c)
-
 		se.pause = !se.pause
 		sendAndDelete(m.ChannelID, m.ID)
 	}
 
 	if strings.HasPrefix(m.Content, "!play") {
-		c, _ := s.State.Channel(m.ChannelID)
-		se := getServer(s, c)
-
 		se.pause = false
 		sendAndDelete(m.ChannelID, m.ID)
 	}
@@ -214,25 +212,72 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-func getServer(s *discordgo.Session, c *discordgo.Channel) *server {
+func getServer(s *discordgo.Session, c *discordgo.Channel) (*server, error) {
 	if c.GuildID == "" {
+		if pmlm[c.ID] != "" {
+			return plm[pmlm[c.ID]], nil
+		}
+
+		// If user is in a voice channel
 		for _, se := range s.State.Guilds {
 			for _, vs := range se.VoiceStates {
 				if vs.UserID == c.Recipient.ID {
-					c, _ = s.State.Channel(vs.ChannelID)
-					return getServer(s, c)
+					ch, _ := s.State.Channel(vs.ChannelID)
+					gu, _ := getServer(s, ch)
+					pmlm[c.ID] = gu.GuildID
+					return plm[pmlm[c.ID]], nil
 				}
 			}
 		}
-	}
-	se := plm[c.GuildID] //Saves server locally
 
-	if se == nil { //Initializes server
-		se = new(server)
+		// If user is NOT in a voice channel
+		var sList []string
+		for _, se := range s.State.Guilds {
+			for _, me := range se.Members {
+				if me.User.ID == c.Recipient.ID {
+					sList = append(sList, se.ID)
+				}
+			}
+		}
+		m, _ := s.ChannelMessage(c.ID, c.LastMessageID)
+		selected, _ := strconv.Atoi(m.Content)
+		if selected != 0 {
+			selected = selected - 1
+			g, error := s.State.Guild(sList[selected])
+			if error != nil {
+				fmt.Println(error)
+			}
+			gu, _ := getServer(s, g.Channels[0])
+			pmlm[c.ID] = gu.GuildID
+			return plm[pmlm[c.ID]], nil
+		} else if len(sList) == 1 {
+			g, _ := s.State.Guild(sList[0])
+			gu, _ := getServer(s, g.Channels[0])
+			pmlm[c.ID] = gu.GuildID
+			return plm[pmlm[c.ID]], nil
+		} else if len(sList) == 0 {
+			s.ChannelMessageSend(c.ID, "Hmm, I don't seem to have any servers in common with you")
+		} else {
+			msg := "Please select a server by typing its number"
+			for i, gid := range sList {
+				msg += "\n"
+				msg += "[" + strconv.Itoa(i+1) + "] "
+				guild, _ := s.State.Guild(gid)
+				msg += guild.Name
+			}
+			s.ChannelMessageSend(c.ID, msg)
+			return nil, errors.New("Waiting for selection")
+		}
+
+	}
+
+	if plm[c.GuildID] == nil { // Creates new server if one does not exist
+		se := server{}
 		se.pl = make([]youtube.Video, 0)
 		se.connect(s, c)
+		plm[c.GuildID] = &se
 	}
-	return se
+	return plm[c.GuildID], nil
 }
 
 type server struct {
@@ -252,7 +297,19 @@ type server struct {
 
 func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
 	g, _ := s.State.Guild(c.GuildID)
-	dgv, _ := s.ChannelVoiceJoin(g.ID, g.VoiceStates[0].ChannelID, false, false)
+	var vc string
+	if len(g.VoiceStates) == 0 {
+		fmt.Println("no vc")
+		for _, ch := range g.Channels {
+			if ch.Type == "voice" {
+				vc = ch.ID
+				break
+			}
+		}
+	} else {
+		vc = g.VoiceStates[0].ChannelID
+	}
+	dgv, _ := s.ChannelVoiceJoin(g.ID, vc, false, false)
 	se.VoiceConnection = *dgv
 	go se.playLoop(s)
 	return
@@ -396,7 +453,7 @@ func (se *server) PlayAudioFile(filename string) {
 func download(s string) { //TODO: Stream using -g flag in yt-dl
 	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", s)
 
-	fmt.Printf("Beginning download with command :%s\n", cmd)
+	fmt.Printf("Beginning download with command :%s\n", cmd.Args)
 	//noinspection ALL
 	output, err := cmd.CombinedOutput()
 	if err != nil {
