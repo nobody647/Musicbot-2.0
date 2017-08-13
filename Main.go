@@ -106,7 +106,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		se.pl = append(se.pl, request) //Adds item to playlist
 
-		plm[c.GuildID] = se
+		getServer(c.GuildID) = se
 
 		s.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
 
@@ -215,6 +215,16 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func getServer(s *discordgo.Session, c *discordgo.Channel) *server {
+	if c.GuildID == "" {
+		for _, se := range s.State.Guilds {
+			for _, vs := range se.VoiceStates {
+				if vs.UserID == c.Recipient.ID {
+					c, _ = s.State.Channel(vs.ChannelID)
+					return getServer(s, c)
+				}
+			}
+		}
+	}
 	se := plm[c.GuildID] //Saves server locally
 
 	if se == nil { //Initializes server
