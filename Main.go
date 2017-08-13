@@ -106,7 +106,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		se.pl = append(se.pl, request) //Adds item to playlist
 
-		getServer(c.GuildID) = se
+		plm[getServer(s, c).GuildID] = se
 
 		s.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
 
@@ -119,7 +119,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		c, _ := s.State.Channel(m.ChannelID)
 		se := getServer(s, c)
 
-		st := "There are " + strconv.Itoa(len(plm[c.GuildID].pl)) + " songs in the playlist\n"
+		st := "There are " + strconv.Itoa(len(plm[getServer(s, c).GuildID].pl)) + " songs in the playlist\n"
 		for i := range se.pl {
 			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
 		}
