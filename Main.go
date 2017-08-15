@@ -11,17 +11,11 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	//"github.com/bwmarrin/dgvoice"
 	"bufio"
 	"encoding/binary"
-	"github.com/bwmarrin/discordgo"
-	"google.golang.org/api/googleapi/transport"
-	"google.golang.org/api/youtube/v3"
+	"errors"
+	"fmt"
 	"io"
-	"layeh.com/gopus"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -32,51 +26,75 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"layeh.com/gopus"
+
+	cowsay "github.com/Code-Hex/Neo-cowsay"
+	"github.com/bwmarrin/discordgo"
+	"google.golang.org/api/googleapi/transport"
+	"google.golang.org/api/youtube/v3"
 )
 
-var plm map[string]*server
-var yt *youtube.Service
-var discord discordgo.Session
+var (
+	plm     = make(map[string]*server)
+	pmlm    = make(map[string]string)
+	yt      *youtube.Service
+	discord *discordgo.Session
+)
 
-func main() {
-	discord2, _ := discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
-	discord = *discord2
-	discord.Open()
-	discord.AddHandler(messageCreate)
-	plm = make(map[string]*server)
+const christianCowsay = ` ______________________________________
+< no wearing this is a christian sever >
+ --------------------------------------
+        \   ^__^
+         \  (oo)\_______
+            (__)\       )\/\
+                ||----w |
+                ||     ||`
+
+func init() {
+	discord, _ = discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
+
 	client := &http.Client{
 		Transport: &transport.APIKey{Key: "AIzaSyBTYNvJ80kHSE8AypP7Yst5Fshc8ZibHRA"},
 	}
-
-	yti, err := youtube.New(client)
-	yt = yti
-
-	if err != nil {
-		log.Fatalf("Error creating new YouTube client: %se", err)
-	}
+	yt, _ = youtube.New(client)
+}
+func main() {
+	discord.Open()
+	discord.AddHandler(messageCreate)
 	sc := make(chan os.Signal, 1)
 	//noinspection ALL
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
 
 	discord.Close()
-
 }
 
-func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == s.State.User.ID {
+func messageCreate(m *discordgo.MessageCreate) {
+	if m.Author.ID == discord.State.User.ID {
+		return
+	}
+	c, _ := discord.State.Channel(m.ChannelID)
+	se, err := getServer(c)
+	if err != nil {
 		return
 	}
 
+	for i, sv := range plm {
+		guild, _ := discord.State.Guild(sv.GuildID)
+		fmt.Println(i + " " + guild.Name)
+	}
+
 	if strings.HasPrefix(m.Content, "!botsay") {
-		s.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
-		s.ChannelMessageDelete(m.ChannelID, m.ID)
+		discord.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
+		discord.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
 
 	if strings.HasPrefix(m.Content, "!sr") {
 		defer func() {
 			if r := recover(); r != nil {
-				s.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
+				discord.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
+				fmt.Println(r)
 			}
 		}()
 
@@ -87,40 +105,22 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 
-		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil {
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
-
 		if !songExists(request.Id) { //Download
 			go download(request.Id)
 		}
 
 		se.pl = append(se.pl, request) //Adds item to playlist
 
-		plm[c.GuildID] = se
-
-		s.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
+		discord.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
 
 	}
 
-	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || strings.HasPrefix(m.Content, "!pl") {
+	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || m.Content == "!pl" {
 		defer func() {
 			recover()
 		}()
-		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
 
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
-		st := "There are " + strconv.Itoa(len(plm[c.GuildID].pl)) + " songs in the playlist\n"
+		st := "There are " + strconv.Itoa(len(se.pl)) + " songs in the playlist\n"
 		for i := range se.pl {
 			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
 		}
@@ -129,14 +129,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "!skip") {
-		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				discord.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
+			}
+		}()
 
 		if m.Content == "!skip" {
 			se.skip = true
@@ -151,59 +148,133 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				se.pl = append(se.pl[:i], se.pl[i+1:]...)
 			} else if i == 0 {
 				m.Content = "!skip"
-				messageCreate(s, m)
+				messageCreate(m)
 			}
 		}
-		s.ChannelMessageDelete(m.ChannelID, m.ID)
+		discord.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
 
 	if strings.HasPrefix(m.Content, "!pause") {
-		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
-
 		se.pause = !se.pause
 		sendAndDelete(m.ChannelID, m.ID)
 	}
 
 	if strings.HasPrefix(m.Content, "!play") {
-		c, _ := s.State.Channel(m.ChannelID)
-		se := plm[c.GuildID] //Saves server locally
-
-		if se == nil { //Initializes server
-			se = new(server)
-			se.pl = make([]youtube.Video, 0)
-			se.connect(s, c)
-		}
-
 		se.pause = false
 		sendAndDelete(m.ChannelID, m.ID)
 	}
 
+	if strings.HasPrefix(m.Content, "!cowsay") {
+		say, _ := cowsay.Say(&cowsay.Cow{
+			Phrase:      strings.TrimPrefix(m.Content, "!cowsay "),
+			Type:        "default",
+			BallonWidth: 40,
+		})
+		discord.ChannelMessageSend(m.ChannelID, "```"+say+"```")
+		discord.ChannelMessageDelete(m.ChannelID, m.ID)
+	}
+
+	// Noswear detection
+	file, _ := os.Open("sweardiscord.txt")
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		if strings.Contains(" "+strings.ToLower(m.Content)+" ", " "+strings.Trim(scanner.Text(), "\" :1,")+" ") {
+			fmt.Println("swar")
+			fmt.Println(scanner.Text())
+			fmt.Print(christianCowsay)
+			//discord.ChannelMessageSend(m.ChannelID, christianCowsay)
+			c, _ := discord.UserChannelCreate(m.Author.ID)
+			discord.ChannelMessageSend(c.ID, christianCowsay)
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "reading standard input:", err)
+	}
+
 	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) || strings.Contains(strings.ToLower(m.Content), "yikes! something went wrong!") {
-		return
 		//noinspection ALL
 		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
 		bugQuotes := []string{
-			"Musicbot is 100% properly working and fixed and there are no bugs ever™",
-			"Fuck you",
-			"At least I'm not as stupid as you",
+			"Musicbot is 100% properly working and fixed and there are no bugs ever",
 			"What the fuck did you just fucking say about me, you little bitch?",
-			"@here " + m.Author.Mention() + " has aids",
-			"Please submit all bug reports by SHOVING THEM UP YOUR ASS",
-			"I'm not BROKEN. I'm just 🌼*special*🌼",
-			"At least I'm not a virgin who spends all their time on the internet laughing at shitty memes",
+			"I'm not BROKEN. I'm just *special*",
 			strings.Replace(strings.Replace(strings.ToLower(m.Content), "musicbot", m.Author.Mention(), -1), "music bot", m.Author.Mention(), -1),
 			"Yikes! something went wrong!",
 		}
 		rn := rand.Intn(len(bugQuotes))
-		s.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
+		discord.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
 	}
+}
+
+func getServer(c *discordgo.Channel) (*server, error) {
+	if c.GuildID == "" { // If channel is a PM
+		if pmlm[c.ID] != "" {
+			return plm[pmlm[c.ID]], nil
+		}
+
+		// If user is in a voice channel
+		for _, se := range discord.State.Guilds {
+			for _, vs := range se.VoiceStates {
+				if vs.UserID == c.Recipient.ID {
+					ch, _ := discord.State.Channel(vs.ChannelID)
+					gu, _ := getServer(ch)
+					pmlm[c.ID] = gu.GuildID
+					return plm[pmlm[c.ID]], nil
+				}
+			}
+		}
+
+		// If user is NOT in a voice channel
+		var sList []string // List of servers in common with requester
+		for _, se := range discord.State.Guilds {
+			for _, me := range se.Members {
+				if me.User.ID == c.Recipient.ID {
+					sList = append(sList, se.ID)
+				}
+			}
+		}
+		m, _ := discord.ChannelMessage(c.ID, c.LastMessageID)
+		selected, _ := strconv.Atoi(m.Content)
+
+		if selected != 0 {
+			selected = selected - 1
+			g, error := discord.State.Guild(sList[selected])
+			if error != nil {
+				fmt.Println(error)
+			}
+			gu, _ := getServer(g.Channels[0])
+			pmlm[c.ID] = gu.GuildID
+			return plm[pmlm[c.ID]], nil
+		} else if len(sList) == 1 { // If only one server in common
+			g, _ := discord.State.Guild(sList[0])
+			gu, _ := getServer(g.Channels[0])
+			pmlm[c.ID] = gu.GuildID
+			return plm[pmlm[c.ID]], nil
+		} else if len(sList) == 0 {
+			discord.ChannelMessageSend(c.ID, "Hmm, I don't seem to have any servers in common with you")
+		} else { // If user did not make a selection
+			msg := "Please select a server by typing its number"
+			for i, gid := range sList {
+				msg += "\n"
+				msg += "[" + strconv.Itoa(i+1) + "] "
+				guild, _ := discord.State.Guild(gid)
+				msg += guild.Name
+			}
+			msg += "\n Please note that if you just made a request, you will have to make it again after you select a server"
+			discord.ChannelMessageSend(c.ID, msg)
+			return nil, errors.New("Waiting for selection")
+		}
+
+	}
+
+	if plm[c.GuildID] == nil { // Creates new server if one does not exist
+		se := server{}
+		se.pl = make([]youtube.Video, 0)
+		se.connect(c)
+		plm[c.GuildID] = &se
+	}
+	return plm[c.GuildID], nil
 }
 
 type server struct {
@@ -221,16 +292,28 @@ type server struct {
 	pl          []youtube.Video
 }
 
-func (se *server) connect(s *discordgo.Session, c *discordgo.Channel) {
-	g, _ := s.State.Guild(c.GuildID)
-	dgv, _ := s.ChannelVoiceJoin(g.ID, g.VoiceStates[0].ChannelID, false, false)
+func (se *server) connect(c *discordgo.Channel) {
+	g, _ := discord.State.Guild(c.GuildID)
+	var vc string
+	if len(g.VoiceStates) == 0 {
+		fmt.Println("no vc")
+		for _, ch := range g.Channels {
+			if ch.Type == "voice" {
+				vc = ch.ID
+				break
+			}
+		}
+	} else {
+		vc = g.VoiceStates[0].ChannelID
+	}
+	dgv, _ := discord.ChannelVoiceJoin(g.ID, vc, false, false)
 	se.VoiceConnection = *dgv
-	go se.playLoop(s)
+	go se.playLoop()
 	return
 
 }
 
-func (se *server) playLoop(s *discordgo.Session) {
+func (se *server) playLoop() {
 	for {
 		for len(se.pl) == 0 {
 			time.Sleep(time.Second * 1)
@@ -297,7 +380,7 @@ func (se *server) SendPCM(pcm <-chan []int16) {
 		}
 
 		if se.Ready == false || se.OpusSend == nil {
-			fmt.Printf("Discordgo not ready for opus packets. %+se : %+se", se.Ready, se.OpusSend)
+			fmt.Printf("Discordgo not ready for opus packetdiscord. %+se : %+se", se.Ready, se.OpusSend)
 			return
 		}
 		// send encoded opus data to the sendOpus channel
@@ -367,7 +450,7 @@ func (se *server) PlayAudioFile(filename string) {
 func download(s string) { //TODO: Stream using -g flag in yt-dl
 	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", s)
 
-	fmt.Printf("Beginning download with command :%s\n", cmd)
+	fmt.Printf("Beginning download with command :%s\n", cmd.Args)
 	//noinspection ALL
 	output, err := cmd.CombinedOutput()
 	if err != nil {
