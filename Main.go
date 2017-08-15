@@ -200,10 +200,6 @@ func checkCommands(m *discordgo.Message) {
 
 func getServer(c *discordgo.Channel) (*server, error) {
 	if c.GuildID == "" { // If channel is a PM
-		if pmlm[c.ID] != "" {
-			return plm[pmlm[c.ID]], nil
-		}
-
 		// If user is in a voice channel
 		for _, se := range discord.State.Guilds {
 			for _, vs := range se.VoiceStates {
@@ -214,6 +210,10 @@ func getServer(c *discordgo.Channel) (*server, error) {
 					return plm[pmlm[c.ID]], nil
 				}
 			}
+		}
+
+		if pmlm[c.ID] != "" {
+			return plm[pmlm[c.ID]], nil
 		}
 
 		// If user is NOT in a voice channel
