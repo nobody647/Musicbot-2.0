@@ -38,8 +38,10 @@ import (
 var (
 	plm     = make(map[string]*server)
 	pmlm    = make(map[string]string)
+	cmdlm   = make(map[string]*discordgo.Message)
 	yt      *youtube.Service
 	discord *discordgo.Session
+	cmd     = make(map[string]func(m *discordgo.Message, se *server, s []string))
 )
 
 const christianCowsay = ` ______________________________________
@@ -59,45 +61,9 @@ func init() {
 	}
 	yt, _ = youtube.New(client)
 }
-func main() {
-	discord.Open()
-	discord.AddHandler(messageCreate)
-	sc := make(chan os.Signal, 1)
-	//noinspection ALL
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
-	<-sc
 
-	discord.Close()
-}
-
-func messageCreate(m *discordgo.MessageCreate) {
-	if m.Author.ID == discord.State.User.ID {
-		return
-	}
-	c, _ := discord.State.Channel(m.ChannelID)
-	se, err := getServer(c)
-	if err != nil {
-		return
-	}
-
-	for i, sv := range plm {
-		guild, _ := discord.State.Guild(sv.GuildID)
-		fmt.Println(i + " " + guild.Name)
-	}
-
-	if strings.HasPrefix(m.Content, "!botsay") {
-		discord.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
-		discord.ChannelMessageDelete(m.ChannelID, m.ID)
-	}
-
-	if strings.HasPrefix(m.Content, "!sr") {
-		defer func() {
-			if r := recover(); r != nil {
-				discord.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
-				fmt.Println(r)
-			}
-		}()
-
+func initCommands() {
+	cmd["!sr"] = func(m *discordgo.Message, se *server, s []string) {
 		request, err := getSearch(strings.TrimSpace(strings.TrimPrefix(m.Content, "!sr"))) //Requested song/link
 
 		if err != nil {
@@ -112,14 +78,8 @@ func messageCreate(m *discordgo.MessageCreate) {
 		se.pl = append(se.pl, request) //Adds item to playlist
 
 		discord.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
-
 	}
-
-	if strings.HasPrefix(m.Content, "!pll") || strings.HasPrefix(m.Content, "!playlist") || m.Content == "!pl" {
-		defer func() {
-			recover()
-		}()
-
+	cmd["!pl"] = func(m *discordgo.Message, se *server, s []string) {
 		st := "There are " + strconv.Itoa(len(se.pl)) + " songs in the playlist\n"
 		for i := range se.pl {
 			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
@@ -127,14 +87,7 @@ func messageCreate(m *discordgo.MessageCreate) {
 
 		sendAndDelete(m.ChannelID, m.ID, st)
 	}
-
-	if strings.HasPrefix(m.Content, "!skip") {
-		defer func() {
-			if r := recover(); r != nil {
-				discord.ChannelMessageSend(m.ChannelID, "Yikes! Something went wrong!")
-			}
-		}()
-
+	cmd["!skip"] = func(m *discordgo.Message, se *server, s []string) {
 		if m.Content == "!skip" {
 			se.skip = true
 			se.pause = false
@@ -148,23 +101,20 @@ func messageCreate(m *discordgo.MessageCreate) {
 				se.pl = append(se.pl[:i], se.pl[i+1:]...)
 			} else if i == 0 {
 				m.Content = "!skip"
-				messageCreate(m)
+				checkCommands(m)
 			}
 		}
 		discord.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
-
-	if strings.HasPrefix(m.Content, "!pause") {
+	cmd["!pause"] = func(m *discordgo.Message, se *server, s []string) {
 		se.pause = !se.pause
 		sendAndDelete(m.ChannelID, m.ID)
 	}
-
-	if strings.HasPrefix(m.Content, "!play") {
+	cmd["!play"] = func(m *discordgo.Message, se *server, s []string) {
 		se.pause = false
 		sendAndDelete(m.ChannelID, m.ID)
 	}
-
-	if strings.HasPrefix(m.Content, "!cowsay") {
+	cmd["!cowsay"] = func(m *discordgo.Message, se *server, s []string) {
 		say, _ := cowsay.Say(&cowsay.Cow{
 			Phrase:      strings.TrimPrefix(m.Content, "!cowsay "),
 			Type:        "default",
@@ -173,9 +123,32 @@ func messageCreate(m *discordgo.MessageCreate) {
 		discord.ChannelMessageSend(m.ChannelID, "```"+say+"```")
 		discord.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
+	cmd["!botsay"] = func(m *discordgo.Message, se *server, s []string) {
+		discord.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
+		discord.ChannelMessageDelete(m.ChannelID, m.ID)
+	}
+}
+
+func main() {
+	initCommands()
+	discord.Open()
+	discord.AddHandler(messageHandler)
+	sc := make(chan os.Signal, 1)
+
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+	<-sc
+
+	discord.Close()
+}
+
+func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author.ID == discord.State.User.ID {
+		return
+	}
+	checkCommands(m.Message)
 
 	// Noswear detection
-	file, _ := os.Open("sweardiscord.txt")
+	file, _ := os.Open("swears.txt")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		if strings.Contains(" "+strings.ToLower(m.Content)+" ", " "+strings.Trim(scanner.Text(), "\" :1,")+" ") {
@@ -192,9 +165,9 @@ func messageCreate(m *discordgo.MessageCreate) {
 		fmt.Fprintln(os.Stderr, "reading standard input:", err)
 	}
 
+	// Insult generator
 	if (strings.Contains(strings.ToLower(m.Content), "musicbot") || strings.Contains(strings.ToLower(m.Content), "music bot")) && (strings.Contains(strings.ToLower(m.Content), "bug") || strings.Contains(strings.ToLower(m.Content), "broken") || strings.Contains(strings.ToLower(m.Content), "buggy")) || strings.Contains(strings.ToLower(m.Content), "yikes! something went wrong!") {
-		//noinspection ALL
-		rand.Seed(int64(time.Now().Unix())) //hehe 69 haha
+		rand.Seed(int64(time.Now().Unix()))
 		bugQuotes := []string{
 			"Musicbot is 100% properly working and fixed and there are no bugs ever",
 			"What the fuck did you just fucking say about me, you little bitch?",
@@ -204,6 +177,24 @@ func messageCreate(m *discordgo.MessageCreate) {
 		}
 		rn := rand.Intn(len(bugQuotes))
 		discord.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
+	}
+
+}
+
+func checkCommands(m *discordgo.Message) {
+	if m.Author.ID == discord.State.User.ID {
+		return
+	}
+	c, _ := discord.State.Channel(m.ChannelID)
+	se, err := getServer(c)
+	if err != nil {
+		return
+	}
+
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(m.Content)), " ")
+	command := cmd[parts[0]]
+	if command != nil {
+		command(m, se, parts[1:])
 	}
 }
 
@@ -245,6 +236,11 @@ func getServer(c *discordgo.Channel) (*server, error) {
 			}
 			gu, _ := getServer(g.Channels[0])
 			pmlm[c.ID] = gu.GuildID
+			if cmdlm[m.ChannelID] != nil {
+				checkCommands(cmdlm[m.ChannelID])
+				discord.ChannelMessageSend(m.ChannelID, "Your command `"+cmdlm[m.ChannelID].Content+"` has been run for server `"+g.Name+"`")
+				cmdlm[m.ChannelID] = nil
+			}
 			return plm[pmlm[c.ID]], nil
 		} else if len(sList) == 1 { // If only one server in common
 			g, _ := discord.State.Guild(sList[0])
@@ -261,7 +257,8 @@ func getServer(c *discordgo.Channel) (*server, error) {
 				guild, _ := discord.State.Guild(gid)
 				msg += guild.Name
 			}
-			msg += "\n Please note that if you just made a request, you will have to make it again after you select a server"
+			//msg += "\n Please note that if you just made a request, you will have to make it again after you select a server"
+			cmdlm[m.ChannelID] = m
 			discord.ChannelMessageSend(c.ID, msg)
 			return nil, errors.New("Waiting for selection")
 		}
@@ -299,8 +296,10 @@ func (se *server) connect(c *discordgo.Channel) {
 		fmt.Println("no vc")
 		for _, ch := range g.Channels {
 			if ch.Type == "voice" {
-				vc = ch.ID
-				break
+				if ch.Position == 0 || strings.Contains(strings.ToLower(ch.Name), "music") {
+					vc = ch.ID
+					break
+				}
 			}
 		}
 	} else {
