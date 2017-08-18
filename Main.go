@@ -359,6 +359,11 @@ func (se *server) SendPCM(pcm <-chan []int16) {
 
 	if err != nil {
 		fmt.Println("NewEncoder Error:", err)
+		if !se.VoiceConnection.Ready {
+			se.VoiceConnection.Disconnect()
+			ch, _ := discord.Channel(se.ChannelID)
+			se.connect(ch)
+		}
 		return
 	}
 
