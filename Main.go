@@ -5,7 +5,7 @@
  / /  / /  / /_/ /   ___/ /  _/ /   / /___    / /_/ / / /_/ /  / /            / __/  _ / /_/ /
 /_/  /_/   \____/   /____/  /___/   \____/   /_____/  \____/  /_/            /____/ (_)\____/
 
-	A project by Ian Flanagan
+	A project by Ian Flanflan
 */
 
 package main
