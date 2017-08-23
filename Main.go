@@ -79,7 +79,7 @@ func initCommands() {
 
 		discord.ChannelMessageDelete(m.ChannelID, m.ID) //Deletes message
 	}
-	cmd["!pl"] = func(m *discordgo.Message, se *server, s []string) {
+	plCMD := func(m *discordgo.Message, se *server, s []string) {
 		st := "There are " + strconv.Itoa(len(se.pl)) + " songs in the playlist\n"
 		for i := range se.pl {
 			st += "\n[" + strconv.Itoa(i) + "] " + se.pl[i].Snippet.Title
@@ -87,6 +87,8 @@ func initCommands() {
 
 		sendAndDelete(m.ChannelID, m.ID, st)
 	}
+	cmd["!pl"] = plCMD
+	cmd["!playlist"] = plCMD
 	cmd["!skip"] = func(m *discordgo.Message, se *server, s []string) {
 		if m.Content == "!skip" {
 			se.skip = true
