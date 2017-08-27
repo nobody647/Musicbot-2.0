@@ -315,18 +315,29 @@ func (se *server) connect(c *discordgo.Channel) {
 }
 
 func (se *server) playLoop() {
+	song := &se.pl[0]
 	for {
 		for len(se.pl) == 0 {
 			time.Sleep(time.Second * 1)
 		}
 
-		for !songExists(se.pl[0].Id) {
-			time.Sleep(time.Second * 1)
-		}
-
 		se.pause = false
 		se.skip = false
-		se.PlayAudioFile("dl/" + se.pl[0].Id + ".mp3")
+
+		if songExists(song.Id) {
+			fmt.Println("File exists for " + song.Snippet.Title + ", playing now")
+			se.PlayAudioFile("dl/" + se.pl[0].Id + ".mp3")
+		} else {
+			fmt.Println("Getting stream URL for " + song.Snippet.Title)
+			output, err := exec.Command("youtube-dl", "-g", song.Id).Output()
+			if err != nil {
+				fmt.Print("Error getting URL: ")
+				fmt.Println(err)
+				continue
+			}
+			se.PlayAudioFile(strings.Split(string(output), "\n")[1])
+		}
+
 		npl := make([]youtube.Video, len(se.pl)-1)
 		for i := range se.pl {
 			if i == 0 {
@@ -458,12 +469,12 @@ func download(s string) { //TODO: Stream using -g flag in yt-dl
 
 	fmt.Printf("Beginning download with command :%s\n", cmd.Args)
 	//noinspection ALL
-	output, err := cmd.CombinedOutput()
+	_, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("Error on download: %s\n", err)
 	}
-	fmt.Printf("Output : %s", output)
-	fmt.Println("Finished download")
+	//fmt.Printf("Output : %s", output)
+	fmt.Println("Finished download of " + s)
 }
 
 func songExists(s string) bool {
