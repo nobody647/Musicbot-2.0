@@ -315,11 +315,11 @@ func (se *server) connect(c *discordgo.Channel) {
 }
 
 func (se *server) playLoop() {
-	song := &se.pl[0]
 	for {
 		for len(se.pl) == 0 {
 			time.Sleep(time.Second * 1)
 		}
+		song := &se.pl[0]
 
 		se.pause = false
 		se.skip = false
