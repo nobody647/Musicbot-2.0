@@ -93,7 +93,7 @@ func initCommands() {
 		if m.Content == "!skip" {
 			se.skip = true
 			se.pause = false
-		} else if strings.Contains(m.Content.ToLower(), "all") {
+		} else if strings.Contains(strings.ToLower(m.Content), "all") {
 			se.pl = se.pl[:0]
 		} else {
 			a := strings.TrimSpace(strings.TrimPrefix(m.Content, "!skip"))
