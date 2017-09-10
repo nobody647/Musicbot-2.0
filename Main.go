@@ -331,7 +331,7 @@ func (se *server) playLoop() {
 			se.PlayAudioFile("dl/" + se.pl[0].Id + ".mp3")
 		} else {
 			fmt.Println("Getting stream URL for " + song.Snippet.Title)
-			output, err := exec.Command("youtube-dl", "-g", song.Id).Output()
+			output, err := exec.Command("youtube-dl", "-g", "https://www.youtube.com/watch?v="+song.Id).Output()
 			if err != nil {
 				fmt.Print("Error getting URL: ")
 				fmt.Println(err)
@@ -466,8 +466,8 @@ func (se *server) PlayAudioFile(filename string) {
 	fmt.Printf("%s is outta here!\n", filename)
 }
 
-func download(s string) { //TODO: Stream using -g flag in yt-dl
-	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", s)
+func download(s string) {
+	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", "https://www.youtube.com/watch?v="+s)
 
 	fmt.Printf("Beginning download with command :%s\n", cmd.Args)
 	//noinspection ALL
