@@ -1,2 +1,3 @@
 # Musicbot-2.0
-// TODO: add readme
+
+its a bot that does music
