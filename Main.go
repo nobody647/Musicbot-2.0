@@ -203,11 +203,13 @@ func checkCommands(m *discordgo.Message) {
 }
 
 func getServer(c *discordgo.Channel) (*server, error) {
-	if c.GuildID == "" { // If channel is a PM
+	if c.Type == 1 { // If channel is a PM
 		// If user is in a voice channel
 		for _, se := range discord.State.Guilds {
 			for _, vs := range se.VoiceStates {
-				if vs.UserID == c.Recipient.ID {
+				fmt.Println("I got this far")
+				msg, _ := discord.ChannelMessage(c.ID, c.LastMessageID)
+				if vs.UserID == msg.Author.ID {
 					ch, _ := discord.State.Channel(vs.ChannelID)
 					gu, _ := getServer(ch)
 					pmlm[c.ID] = gu.GuildID
@@ -224,7 +226,8 @@ func getServer(c *discordgo.Channel) (*server, error) {
 		var sList []string // List of servers in common with requester
 		for _, se := range discord.State.Guilds {
 			for _, me := range se.Members {
-				if me.User.ID == c.Recipient.ID {
+				msg, _ := discord.ChannelMessage(c.ID, c.LastMessageID)
+				if me.User.ID == msg.Author.ID {
 					sList = append(sList, se.ID)
 				}
 			}
@@ -299,7 +302,7 @@ func (se *server) connect(c *discordgo.Channel) {
 	if len(g.VoiceStates) == 0 {
 		fmt.Println("no vc")
 		for _, ch := range g.Channels {
-			if ch.Type == "voice" {
+			if ch.Type == 2 {
 				if ch.Position == 0 || strings.Contains(strings.ToLower(ch.Name), "music") {
 					vc = ch.ID
 					break
