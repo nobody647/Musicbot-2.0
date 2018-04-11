@@ -13,9 +13,12 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -54,10 +57,11 @@ const christianCowsay = ` ______________________________________
                 ||     ||`
 
 func init() {
-	discord, _ = discordgo.New("Bot MTg5MTQ2MDg0NzE3NjI1MzQ0.DANL1A.4cLruFPliFxkd0r41pYB307_D1M")
+	disToken, ytToken := getTokens()
+	discord, _ = discordgo.New("Bot " + disToken)
 
 	client := &http.Client{
-		Transport: &transport.APIKey{Key: "AIzaSyBTYNvJ80kHSE8AypP7Yst5Fshc8ZibHRA"},
+		Transport: &transport.APIKey{Key: ytToken},
 	}
 	yt, _ = youtube.New(client)
 }
@@ -133,8 +137,23 @@ func initCommands() {
 	}
 }
 
+func getTokens() (string, string) { //Reads a json file to get tokens
+	tokenReader, err := ioutil.ReadFile("token.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var token map[string]string
+	err = json.Unmarshal(tokenReader, &token)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return token["discord"], token["youtube"]
+}
+
 func main() {
 	initCommands()
+	//startWS()
 	discord.Open()
 	discord.AddHandler(messageHandler)
 	sc := make(chan os.Signal, 1)
@@ -175,9 +194,9 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		bugQuotes := []string{
 			"Musicbot is 100% properly working and fixed and there are no bugs ever",
 			"What the fuck did you just fucking say about me, you little bitch?",
-			"I'm not BROKEN. I'm just *special*",
 			strings.Replace(strings.Replace(strings.ToLower(m.Content), "musicbot", m.Author.Mention(), -1), "music bot", m.Author.Mention(), -1),
 			"Yikes! something went wrong!",
+			"no u",
 		}
 		rn := rand.Intn(len(bugQuotes))
 		discord.ChannelMessageSend(m.ChannelID, bugQuotes[rn])
@@ -334,13 +353,13 @@ func (se *server) playLoop() {
 			se.PlayAudioFile("dl/" + se.pl[0].Id + ".mp3")
 		} else {
 			fmt.Println("Getting stream URL for " + song.Snippet.Title)
-			output, err := exec.Command("youtube-dl", "-g", "https://www.youtube.com/watch?v="+song.Id).Output()
+			output, err := exec.Command("youtube-dl", "-g", "-f bestaudio", "https://www.youtube.com/watch?v="+song.Id).Output()
 			if err != nil {
 				fmt.Print("Error getting URL: ")
 				fmt.Println(err)
 				continue
 			}
-			se.PlayAudioFile(strings.Split(string(output), "\n")[1])
+			se.PlayAudioFile(strings.TrimSpace(string(output)))
 		}
 
 		npl := make([]youtube.Video, len(se.pl)-1)
@@ -356,17 +375,12 @@ func (se *server) playLoop() {
 }
 
 func (se *server) SendPCM(pcm <-chan []int16) {
-
-	// make sure this only runs one instance at a time.
-	//noinspection ALL
 	se.mu.Lock()
 	if se.sendpcm || pcm == nil {
-		//noinspection ALL
 		se.mu.Unlock()
 		return
 	}
 	se.sendpcm = true
-	//noinspection ALL
 	se.mu.Unlock()
 
 	defer func() { se.sendpcm = false }()
@@ -414,7 +428,7 @@ func (se *server) PlayAudioFile(filename string) {
 	fmt.Printf("Starting to play %s\n", filename)
 	// Create a shell command "object" to run.
 	se.run = exec.Command("ffmpeg", "-i", filename, "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
-	//noinspection ALL
+
 	ffmpegout, err := se.run.StdoutPipe()
 	if err != nil {
 		fmt.Println("StdoutPipe Error:", err)
@@ -424,7 +438,6 @@ func (se *server) PlayAudioFile(filename string) {
 	ffmpegbuf := bufio.NewReaderSize(ffmpegout, 16384)
 
 	// Starts the ffmpeg command
-	//noinspection ALL
 	err = se.run.Start()
 	if err != nil {
 		fmt.Println("RunStart Error:", err)
@@ -473,7 +486,6 @@ func download(s string) {
 	cmd := exec.Command("youtube-dl", "--extract-audio", "--audio-format", "mp3", "--output", "dl/"+s+".mp3", "https://www.youtube.com/watch?v="+s)
 
 	fmt.Printf("Beginning download with command :%s\n", cmd.Args)
-	//noinspection ALL
 	_, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("Error on download: %s\n", err)
