@@ -135,6 +135,34 @@ func initCommands() {
 		discord.ChannelMessageSend(m.ChannelID, strings.TrimPrefix(m.Content, "!botsay"))
 		discord.ChannelMessageDelete(m.ChannelID, m.ID)
 	}
+	cmd["!purge"] = func(m *discordgo.Message, se *server, s []string) {
+		amt := strings.TrimPrefix(m.Content, "!purge")
+		amt = strings.TrimSpace(amt)
+
+		amt2, err := strconv.Atoi(amt)
+		if err != nil {
+			sendAndDelete(m.ChannelID, m.ID, "OOPSIE WOOPSIE!! Uwu We made a fucky wucky!! A wittle fucko boingo! The code monkeys at our headquarters are working VEWY HAWD to fix this!")
+			return
+		}
+
+		if amt2 < 1 {
+			sendAndDelete(m.ChannelID, m.ID, "OOPSIE WOOPSIE!! Uwu We made a fucky wucky!! A wittle fucko boingo! The code monkeys at our headquarters are working VEWY HAWD to fix this!")
+			return
+		}
+
+		messages, err := discord.ChannelMessages(m.ChannelID, amt2+1, "", "", "")
+		if err != nil {
+			sendAndDelete(m.ChannelID, m.ID, "OOPSIE WOOPSIE!! Uwu We made a fucky wucky!! A wittle fucko boingo! The code monkeys at our headquarters are working VEWY HAWD to fix this!")
+			return
+		}
+
+		var messageIDs []string
+		for i := 0; i < len(messages); i++ {
+			messageIDs = append(messageIDs, messages[i].ID)
+		}
+
+		discord.ChannelMessagesBulkDelete(m.ChannelID, messageIDs)
+	}
 }
 
 func getTokens() (string, string) { //Reads a json file to get tokens
