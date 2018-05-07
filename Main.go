@@ -163,6 +163,22 @@ func initCommands() {
 
 		discord.ChannelMessagesBulkDelete(m.ChannelID, messageIDs)
 	}
+	cmd["!join"] = func(m *discordgo.Message, se *server, s []string) {
+		g, _ := discord.State.Guild(se.GuildID)
+		vc := ""
+		for i := 0; i < len(g.VoiceStates); i++ {
+			if g.VoiceStates[i].UserID == m.Author.ID {
+				vc = g.VoiceStates[i].ChannelID
+			}
+		}
+		if vc == "" {
+			sendAndDelete(m.ChannelID, m.ID, "You're not in a voice channel right now? And I'm already in a channel right now? :thinking:")
+			return
+		}
+
+		se.ChangeChannel(vc, false, false)
+		discord.ChannelMessageDelete(m.ChannelID, m.ID)
+	}
 }
 
 func getTokens() (string, string) { //Reads a json file to get tokens
